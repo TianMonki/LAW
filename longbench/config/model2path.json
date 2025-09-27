@@ -1,0 +1,21 @@
+{
+    "longchat-v1.5-7b-32k": "lmsys/longchat-7b-v1.5-32k",
+    "xgen-7b-8k": "Salesforce/xgen-7b-8k-inst",
+    "internlm-7b-8k": "internlm/internlm-chat-7b-8k",
+    "chatglm2-6b": "THUDM/chatglm2-6b",
+    "chatglm2-6b-32k": "THUDM/chatglm2-6b-32k",
+    "vicuna-v1.5-7b-16k": "lmsys/vicuna-7b-v1.5-16k",
+    "llama2-7b-hf":"llm/Llama-2-7b-hf",
+    "llama2-7b-hf-lminfinite":"",
+    "llama2-7b-hf-ntk-frozen":"",
+    "llama2-7b-hf-pi-64k":"ckpts/main/main_pi_65536",
+    "llama2-7b-hf-ntk-64k-wo-reverse":"ckpts/data_wo_reverse/data_wo_reverse_ntk_65536",
+    "llama2-7b-hf-slimpajama-ntk-32k":"ckpts/data_32k/data_32k_ntk_32768",
+    "llama2-7b-hf-slimpajama-ntk-64k":"ckpts/main/main_ntk_65536",
+    "llama2-7b-hf-slimpajama-ntk-64k-2B":"ckpts/data_2B/data_2B_ntk_65536",
+    "llama2-7b-hf-yarn-64k":"ckpts/main/main_yarn_65536",
+    "llama2-7b-hf-slimpajama-longlora-32k":"",
+    "llama2-7b-hf-slimpajama-landmark":"",
+    "llama2-7b-hf-selfextend":"",
+    "llama2-7b-hf-slimpajama-clex-32k":""
+}
