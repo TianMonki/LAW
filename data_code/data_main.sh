@@ -18,4 +18,4 @@ python $PYTHON_SCRIPT \
     --tokenizer_name "llm/Llama-2-7b-hf" \
     --token_limit_per_type 250000000 \
     --sequence_length 65536 \
-    --use_reverse
+    --use_random_split
