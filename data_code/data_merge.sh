@@ -5,14 +5,18 @@
 set -e
 set -x
 
-# 定义Python脚本的名称，方便修改
-PYTHON_SCRIPT="code/data_merge.py"
+# LAW 主实验：把两个领域的 Stage II 结果按 1:1 token 混合为 1B token 训练集。
+# Usage: bash data_code/data_merge.sh [SEED]
+SEED=${1:-42}
+PYTHON_SCRIPT="data_code/data_merge.py"
 
-# --- 任务1: 生成 0.5B token, 65k 长度, 含倒序 ---
-echo "=================================================="
-echo "开始任务 1: mixed_long_context (0.5B tokens, 65k len)"
-echo "=================================================="
+mkdir -p data/train
 python $PYTHON_SCRIPT \
-    --input_file1 "data/process_arxiv/random_64k.jsonl" \
-    --input_file2 "data/process_code/random_64k.jsonl" \
-    --output_file "data/train/random_64k.jsonl" \
+    --input_file1 "data/law_arxiv/stage2_selected_seed${SEED}.jsonl" \
+    --input_file2 "data/law_code/stage2_selected_seed${SEED}.jsonl" \
+    --output_file "data/train/law_main_seed${SEED}.jsonl" \
+    --seed ${SEED}
+
+echo "=================================================="
+echo "所有任务已成功完成！"
+echo "=================================================="

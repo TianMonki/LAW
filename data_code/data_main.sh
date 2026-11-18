@@ -5,17 +5,28 @@
 set -e
 set -x
 
-# 定义Python脚本的名称，方便修改
-PYTHON_SCRIPT="code/data_main.py"
+# LAW 主实验：对每个领域，用 Stage I 选出的 8K 文档做 order-preserving weaving，生成 64K 候选池 W。
+# 每领域 Stage II 后保留 0.5B token（arXiv:code = 1:1，共 1B）。
+# Usage: bash data_code/data_main.sh [SEED]
+SEED=${1:-42}
+PYTHON_SCRIPT="data_code/data_main.py"
 
-# --- 任务1 ---
+for DOMAIN in arxiv code; do
+    echo "=================================================="
+    echo "构建候选池: ${DOMAIN}, seed=${SEED}"
+    echo "=================================================="
+    python $PYTHON_SCRIPT \
+        --input_file "data/law_${DOMAIN}/stage1_selected.jsonl" \
+        --output_file "data/law_${DOMAIN}/candidates_seed${SEED}.jsonl" \
+        --domain ${DOMAIN} \
+        --tokenizer_name "llm/Meta-Llama-3-8B" \
+        --doc_length 8192 \
+        --sequence_length 65536 \
+        --token_budget 500000000 \
+        --p_long 0.5 \
+        --seed ${SEED}
+done
+
 echo "=================================================="
-echo "开始任务 1"
+echo "所有任务已成功完成！"
 echo "=================================================="
-python $PYTHON_SCRIPT \
-    --input_file "data/process_code/final_aggregated_output.jsonl" \
-    --output_file "data/process_code/mixed_long_context.jsonl" \
-    --tokenizer_name "llm/Llama-2-7b-hf" \
-    --token_limit_per_type 250000000 \
-    --sequence_length 65536 \
-    --use_random_split

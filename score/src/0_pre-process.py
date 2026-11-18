@@ -5,9 +5,8 @@ from transformers import AutoTokenizer
 
 def main():
 
-    tokenizer = AutoTokenizer.from_pretrained("llm/Llama-2-7b-hf")
-
     parser = argparse.ArgumentParser(description="Process and sample data using SlideWindow, FileMerger, and sample_data.")
+    parser.add_argument('--tokenizer_path', type=str, default="llm/Meta-Llama-3-8B", help='Tokenizer shared by the LLaMA-3 training model and the LLaMA-3.1 scorer.')
     
     # Arguments for SlideWindow
     parser.add_argument('--input_folder', type=str, required=True, help='Path to the input folder containing raw data files.')
@@ -25,6 +24,7 @@ def main():
     parser.add_argument('--prefix', type=str, default='sample_', help='Prefix for unique data IDs.')
 
     args = parser.parse_args()
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
 
     # Step 1: Process data using SlideWindow
     slide_window = SlideWindow(llm_tokenizer=tokenizer, max_workers=args.max_workers, batch_size=args.batch_size, window_size=args.window_size)

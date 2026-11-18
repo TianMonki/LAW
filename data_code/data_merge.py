@@ -2,15 +2,16 @@ import json
 import random
 import argparse
 
-def merge_and_shuffle_jsonl(file1_path, file2_path, output_path):
+def merge_and_shuffle_jsonl(file1_path, file2_path, output_path, seed=42):
     """
-    Loads two JSONL files, takes a random half of the data from each,
-    merges them, shuffles the result, and writes to a new file.
+    Mixes the Stage II selections of two domains 1:1 by training tokens and shuffles the result.
+    Every sequence has the same length L, so equal token counts mean equal sequence counts.
 
     Args:
-        file1_path (str): The path to the first simple_sequences.jsonl file.
-        file2_path (str): The path to the second simple_sequences.jsonl file.
+        file1_path (str): Stage II selected sequences of the first domain.
+        file2_path (str): Stage II selected sequences of the second domain.
         output_path (str): The path to the output merged file.
+        seed (int): Controls the subsampling and the training-data order.
     """
     print(f"Loading data from {file1_path} and {file2_path}...")
 
@@ -24,17 +25,18 @@ def merge_and_shuffle_jsonl(file1_path, file2_path, output_path):
         print(f"Error: {e}. Please ensure both input files exist.")
         return
 
-    print("Selecting a random half from each file...")
-    random.shuffle(data1)
-    random.shuffle(data2)
+    rng = random.Random(seed)
+    rng.shuffle(data1)
+    rng.shuffle(data2)
 
-    # half_data1 = data1[:len(data1) // 2]
-    # half_data2 = data2[:len(data2) // 2]
+    keep = min(len(data1), len(data2))
+    if len(data1) != len(data2):
+        print(f"Domain sizes differ ({len(data1)} vs {len(data2)}); keeping {keep} sequences from each for a 1:1 mix.")
 
     print("Merging and shuffling the selected data...")
-    merged_data = data1 + data2
-    random.shuffle(merged_data)
-    print(f"Writing the merged and shuffled data to {output_path}...")
+    merged_data = data1[:keep] + data2[:keep]
+    rng.shuffle(merged_data)
+    print(f"Writing {len(merged_data)} sequences to {output_path}...")
     try:
         with open(output_path, 'w', encoding='utf-8') as f_out:
             # Using writelines for efficiency
@@ -46,12 +48,11 @@ def merge_and_shuffle_jsonl(file1_path, file2_path, output_path):
     print("--- Merging and shuffling process completed successfully! ---")
 
 if __name__ == "__main__":
-    # --- Configuration ---
-    # Please replace these with the actual paths to your files
-    parser = argparse.ArgumentParser(description="拼接数据。")
+    parser = argparse.ArgumentParser(description="按 1:1 token 比例混合两个领域的数据。")
     parser.add_argument("--input_file1", type=str, required=True, help="输入的JSONL文件路径。")
     parser.add_argument("--input_file2", type=str, required=True, help="输入的JSONL文件路径。")
     parser.add_argument("--output_file", type=str, required=True, help="输出的JSONL文件路径。")
+    parser.add_argument("--seed", type=int, default=42, help="随机种子。")
 
     args = parser.parse_args()
     # It's good practice to confirm the files exist before running
@@ -60,4 +61,4 @@ if __name__ == "__main__":
         print("PLEASE UPDATE the 'input_file1' and 'input_file2' variables")
 
     else:
-        merge_and_shuffle_jsonl(args.input_file1, args.input_file2, args.output_file)
+        merge_and_shuffle_jsonl(args.input_file1, args.input_file2, args.output_file, args.seed)

@@ -295,43 +295,69 @@ class CustomLlamaAttention(nn.Module):
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
 
-        # start_time = time.time()
+        # LAW scoring on the head-averaged, post-softmax attention M (Eqs. 3-5 of the paper).
+        # Remote region E_k = {(i, j): i - j >= k} over valid (non-padding) positions, with
+        # k = n // margin; margin = 4 gives k_s = 2K for 8K documents and k_l = 16K for 64K sequences.
+        #   proportions  -> T(X, k) = A(X, k) / n
+        #   uniformities -> U(X, k) = H(P) / log N_k, with P = M / A over E_k
+        # Rows are processed in blocks, so the full L x L matrix is never materialized, and
+        # H(P) = log A - sum(M log M) / A is accumulated in one pass.
+        # The causal mask is built here explicitly, because `_update_causal_mask` returns None
+        # for unpadded inputs under SDPA.
         batch_size, head_nums, seq_len, _ = query_states.shape
-        mask_size = (self.margin - 1) * (seq_len // self.margin)
-        lower_triangular_mask = torch.zeros(seq_len, seq_len).to(query_states.device)
-        triangular_section = torch.tril(torch.ones(mask_size, mask_size)).to(query_states.device)
-        lower_triangular_mask[seq_len - mask_size:, :mask_size] = triangular_section
+        device = query_states.device
+        row_block = getattr(self.config, "law_row_block", 4096)
+        positions = torch.arange(seq_len, device=device)
 
-        proportions = torch.zeros(batch_size, head_nums).to(query_states.device)
-        uniformities = torch.zeros(batch_size, head_nums).to(query_states.device)
-        attn_outputs = torch.zeros(batch_size, head_nums, seq_len, self.head_dim).to(query_states.device)
+        proportions = torch.zeros(batch_size, 1, device=device)
+        uniformities = torch.zeros(batch_size, 1, device=device)
+        attn_outputs = torch.zeros(batch_size, head_nums, seq_len, self.head_dim, dtype=query_states.dtype, device=device)
+        mean_attn = torch.zeros(batch_size, seq_len, seq_len, dtype=query_states.dtype, device=device) if output_attentions else None
 
-        for i in range(head_nums):
-            for j in range(batch_size):
-                # Calculate the attention weight for every head
-                attn_weights = torch.matmul(query_states[j, i], key_states[j, i].transpose(-2, -1)) / math.sqrt(self.head_dim)
-                if attention_mask is not None:  # no matter the length, we just slice it
-                    causal_mask = attention_mask[j, :, :, : key_states.shape[-2]]
-                    attn_weights = attn_weights + causal_mask
-                attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float16).to(query_states.dtype)
-                
-                masked_attn_weights = attn_weights * lower_triangular_mask
+        for j in range(batch_size):
+            # The last query row sees every non-padding key, for both left and right padding.
+            if attention_mask is not None:
+                valid = attention_mask[j, 0, -1, :seq_len] == 0
+            else:
+                valid = torch.ones(seq_len, dtype=torch.bool, device=device)
+            n_valid = int(valid.sum().item())
+            distance_k = getattr(self.config, "law_distance_k", None)
+            if distance_k is None:
+                distance_k = n_valid // self.margin
 
-                # Calculate the variance
-                uniformities[j, i] = masked_attn_weights.var()
-                
-                # Calculate the proportion
-                lower_triangular_score = masked_attn_weights.sum()
-                proportions[j, i] = lower_triangular_score / seq_len
-                # Calculate attention output
-                attn_weights = F.dropout(attn_weights, p=self.attention_dropout, training=self.training)  
-                attn_output = torch.matmul(attn_weights, value_states[j, i])
-                attn_outputs[j, i, :, :] = attn_output
+            remote_mass = torch.zeros((), dtype=torch.float64, device=device)
+            remote_mlogm = torch.zeros((), dtype=torch.float64, device=device)
+            remote_count = 0
+            for start in range(0, seq_len, row_block):
+                end = min(start + row_block, seq_len)
+                rows = positions[start:end, None]
+                visible = (positions[None, :] <= rows) & valid[None, :]
+                has_visible = visible.any(dim=-1, keepdim=True)
+                block_sum = torch.zeros(end - start, seq_len, dtype=torch.float32, device=device)
+                for i in range(head_nums):
+                    attn_weights = torch.matmul(query_states[j, i, start:end], key_states[j, i].transpose(-2, -1)).float() / math.sqrt(self.head_dim)
+                    attn_weights = attn_weights.masked_fill(~visible, float("-inf"))
+                    attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+                    attn_weights = torch.where(has_visible, attn_weights, torch.zeros_like(attn_weights))
+                    attn_outputs[j, i, start:end] = torch.matmul(attn_weights.to(value_states.dtype), value_states[j, i])
+                    block_sum += attn_weights
+                block_mean = block_sum / head_nums
+                if mean_attn is not None:
+                    mean_attn[j, start:end] = block_mean.to(mean_attn.dtype)
 
-        # end_time = time.time()  
+                remote = ((rows - positions[None, :]) >= distance_k) & valid[None, :] & valid[start:end, None]
+                remote_vals = torch.where(remote, block_mean, torch.zeros_like(block_mean))
+                remote_mass += remote_vals.sum(dtype=torch.float64)
+                remote_mlogm += torch.special.xlogy(remote_vals, remote_vals).sum(dtype=torch.float64)
+                remote_count += int(remote.sum().item())
 
-        # elapsed_time = end_time - start_time
-        # print(f"计算时间: {elapsed_time} 秒")
+            if n_valid > 0:
+                proportions[j, 0] = remote_mass / n_valid
+            # Q = 0 when A = 0 or N_k <= 1 (U is left at 0).
+            if remote_count > 1 and remote_mass > 0:
+                entropy = torch.log(remote_mass) - remote_mlogm / remote_mass
+                uniformities[j, 0] = entropy / math.log(remote_count)
+        attn_weights = mean_attn
 
         # reshape of the attn_outputs
         attn_outputs = attn_outputs.transpose(1, 2).contiguous()
