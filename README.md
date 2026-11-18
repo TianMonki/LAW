@@ -1,57 +1,68 @@
-# LAW: Long-Attention Weaving
+# LAW: A Two-Stage Framework for Synthesizing Long-Context Training Data
 
-Code for the main experiment of LAW, a two-stage framework that synthesizes long-context training data from short documents:
+This repository contains the main-experiment code of Long-Attention Weaving (LAW). LAW selects 8K source documents before synthesis, weaves them into 64K sequences, and selects the synthesized sequences afterward.
 
-1. **Stage I**: score 8K source documents with $Q = TU$ (remote attention strength x normalized global entropy) and keep the top 50%.
-2. **Synthesis**: build 64K candidates by order-preserving weaving of 8 selected documents.
-3. **Stage II**: rescore every complete 64K candidate with $Q$ and keep the top 50%.
+## Repository structure
 
-Scores use the first decoder layer of a frozen LLaMA-3.1 70B. arXiv and code are processed separately and then mixed 1:1 by tokens (1B tokens in total) to continually pre-train LLaMA-3 8B with NTK scaling at 64K context.
-
-## Layout
-
-```
-score/src/              LongAttn.py (Q = TU scoring), 0_pre-process.py, 1_inference_dp.py, 2_filtering_by_Lds.py
-score/scripts/          preprocess.sh, stage1_source.bash, stage2_sequence.bash
-data_code/              data_main.py (weaving), data_merge.py (1:1 domain mix)
-continuous_finetuning/  fine-tune.py, finetune_ntk_main.sh
-models/llama_ntk_64k/   NTK model used for evaluation
-longbench/              LongBench prediction, scoring, and summary (eval_law.sh)
-ruler/                  RULER, 13 synthetic tasks at 4K-64K
-run_law_main.sh         end-to-end data construction and training
+```text
+.
+├── score/                  # Q = TU attention scoring and Stage I / Stage II selection
+├── data_code/              # Order-preserving weaving and 1:1 arXiv/code mixing
+├── continuous_finetuning/  # LLaMA-3 8B continual pre-training (NTK, 64K)
+├── models/llama_ntk_64k/   # NTK model used for evaluation
+├── longbench/              # LongBench evaluation
+├── ruler/                  # RULER evaluation (4K-64K)
+└── run_law_main.sh         # End-to-end data construction and training
 ```
 
-## Requirements
+Generated data are written to `data/` and checkpoints to `ckpts/`.
 
-`transformers==4.43.3`, `torch`, `accelerate`, `deepspeed`, `datasets`, `flash-attn`, and `jsonlines`. Put the models under `llm/` (`llm/Meta-Llama-3-8B`, `llm/Llama-3.1-70B`).
+## Installation
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install transformers==4.43.3 torch accelerate deepspeed datasets flash-attn jsonlines
+```
+
+Place the models under `llm/` (`llm/Meta-Llama-3-8B` and `llm/Llama-3.1-70B`).
 
 ## Data
 
-Put the raw files in `data/arxiv/` and `data/code/`. Each line is `{"text": "..."}`.
+Raw corpora go in `data/arxiv/` and `data/code/`, one `{"text": "..."}` per line.
 
-### Released training data
+Experiment data
 
-The 1B-token training set used in the main experiment is available on [Google Drive](https://drive.google.com/file/d/1i_mGJcNRj0kCr5vrU9M7RpG9QjJXIYZg/view?usp=drive_link). Each line holds one 64K-token sequence in `input_ids` (LLaMA-3 tokenizer), with arXiv and code mixed 1:1. To train on it directly without rebuilding the data, save it as `data/train/law_main_seed42.jsonl` and run:
-
-```bash
-bash continuous_finetuning/finetune_ntk_main.sh 42
+```text
+data/
+└── train/law_main_seed42.jsonl  https://drive.google.com/file/d/1i_mGJcNRj0kCr5vrU9M7RpG9QjJXIYZg/view?usp=drive_link
 ```
 
-## Run
+This is the 1B-token training set of the main experiment. Each line holds one 64K-token sequence in `input_ids` (LLaMA-3 tokenizer), with arXiv and code mixed 1:1.
 
-From the repository root:
+## Environment
+
+Computational platform: 8 NVIDIA A800 GPUs, Transformers 4.43.3, DeepSpeed ZeRO-3.
+
+## Running the model
+
+Build the data and train from the repository root (seeds 42, 43, 44):
 
 ```bash
 bash run_law_main.sh
 ```
 
-This runs preprocessing and Stage I once per domain. For each seed (42, 43, 44) it then runs weaving, Stage II, the 1:1 mix, and training. Checkpoints are written to `ckpts/law_main/`.
+To train directly on the released data:
 
-Evaluation (put the LongBench v1 `*.jsonl` files in `longbench/data/`, and download the RULER data with the scripts in `ruler/data/synthetic/json/`):
+```bash
+bash continuous_finetuning/finetune_ntk_main.sh 42
+```
+
+Evaluate on LongBench (put the LongBench v1 `*.jsonl` files in `longbench/data/`) and RULER:
 
 ```bash
 cd longbench && bash scripts/eval_law.sh
 cd ruler && for s in 42 43 44; do bash run.sh llama3-8b-law-ntk-64k-seed$s synthetic; done && bash eval.sh
 ```
 
-Reported numbers are means over the three seeds.
+Both selection stages use a frozen LLaMA-3.1 70B (first decoder layer) and retain 50% of the candidates. Reported numbers are means over three seeds.
