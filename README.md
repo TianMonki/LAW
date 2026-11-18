@@ -1,4 +1,4 @@
-# LAW: A Two-Stage Framework for Synthesizing Long-Context Training Data
+# Attention-Guided Two-Stage Selection for Synthesizing Long-Context Training Data
 
 This repository contains the main-experiment code of Long-Attention Weaving (LAW). LAW selects 8K source documents before synthesis, weaves them into 64K sequences, and selects the synthesized sequences afterward.
 
