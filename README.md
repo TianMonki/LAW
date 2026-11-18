@@ -29,6 +29,14 @@ run_law_main.sh         end-to-end data construction and training
 
 Put the raw files in `data/arxiv/` and `data/code/`. Each line is `{"text": "..."}`.
 
+### Released training data
+
+The 1B-token training set used in the main experiment is available on [Google Drive](https://drive.google.com/file/d/1i_mGJcNRj0kCr5vrU9M7RpG9QjJXIYZg/view?usp=drive_link). Each line holds one 64K-token sequence in `input_ids` (LLaMA-3 tokenizer), with arXiv and code mixed 1:1. To train on it directly without rebuilding the data, save it as `data/train/law_main_seed42.jsonl` and run:
+
+```bash
+bash continuous_finetuning/finetune_ntk_main.sh 42
+```
+
 ## Run
 
 From the repository root:
